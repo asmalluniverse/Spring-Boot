@@ -63,6 +63,31 @@ public ConfigurableApplicationContext run(String... args) {
 （SpringApplicationRunListeners其本质上就是一个事件发布者，它在SpringBoot应用启动的不同时间点发布不同应用事件类型(ApplicationEvent)，如果有哪些事件监听者(ApplicationListener)对这些事件感兴趣，则可以接收并且处理）  
 **SpringApplicationRunListener只有一个实现类：EventPublishingRunListener。**
 
+2. 创建并配置当前应用将要使用的Environment，Environment用于描述应用程序当前的运行环境，其抽象了两个方面的内容：配置文件(profile)和属性(properties)，不同的环境(eg：生产环境、预发布环境)可以使用不同的配置文件，而属性则可以从配置文件、环境变量、命令行参数等来源获取。因此，当Environment准备好后，在整个应用的任何时候，都可以从Environment中获取资源。  
+```java
+  判断Environment是否存在，不存在就创建（如果是web项目就创建StandardServletEnvironment，否则创建StandardEnvironment）  
+  配置Environment：配置profile以及properties  
+  调用SpringApplicationRunListener的environmentPrepared()方法，通知事件监听者：应用的Environment已经准备好 
+```
+3. 打印banner（可以自定义）  
+4. 根据是否是web项目，来创建不同的ApplicationContext容器  
+5. 创建一系列FailureAnalyzer，创建流程依然是通过SpringFactoriesLoader获取到所有实现FailureAnalyzer接口的class，然后在创建对应的实例。FailureAnalyzer用于分析故障并提供相关诊断信息。
+6. 初始化ApplicationContext  
+```shell
+将准备好的Environment设置给ApplicationContext  
+遍历调用所有的ApplicationContextInitializer的initialize()方法来对已经创建好的ApplicationContext进行进一步的处理  
+调用SpringApplicationRunListener的contextPrepared()方法，通知所有的监听者：ApplicationContext已经准备完毕
+将所有的bean加载到容器中
+调用SpringApplicationRunListener的contextLoaded()方法，通知所有的监听者：ApplicationContext已经装载完毕
+```
+7. 调用ApplicationContext的refresh()方法,刷新容器  
+
+这里的刷新和spring中刷新原理类似，这里重点关注invokeBeanFactoryPostProcessors(beanFactory);方法，主要完成获取到所有的BeanFactoryPostProcessor来对容器做一些额外的操作，通过源可以进入到PostProcessorRegistrationDelegate类的invokeBeanFactoryPostProcessors()方法，会获取类型为BeanDefinitionRegistryPostProcessor的beanorg.springframework.context.annotation.internalConfigurationAnnotationProcessor，对应的Class为ConfigurationClassPostProcessor。ConfigurationClassPostProcessor用于解析处理各种注解，包括：@Configuration、@ComponentScan、@Import、@PropertySource、@ImportResource、@Bean。当处理@import注解的时候，就会调用EnableAutoConfigurationImportSelector.selectImports()来完成自动配置功能  
+	
+tomcat的启动的地方也是在refresh方法中，具体就是onRefresh();方法  
+	
+8. 查找当前context中是否注册有CommandLineRunner和ApplicationRunner，如果有则遍历执行它们。
+
 - SpringApplicationRunListener接口
 ```java 
 public interface SpringApplicationRunListener {
@@ -140,27 +165,6 @@ public class MyApplicationRunListener implements SpringApplicationRunListener {
 SpringApplicationRunListener的配置在resources下新建META-INF\spring.factories文件,文件里面将新建的实现类的类路径配置进去,对应的key是org.springframework.boot.SpringApplicationRunListener;  
 
 SpringApplicationRunListener属于应用程序启动层面的监听器,在springboot启动时候,调用run方法进行反射加载初始化。此时上下文还没有加载，如果通过@Compnant是起不了作用的.  
-<br/>
-
-2. 创建并配置当前应用将要使用的Environment，Environment用于描述应用程序当前的运行环境，其抽象了两个方面的内容：配置文件(profile)和属性(properties)，不同的环境(eg：生产环境、预发布环境)可以使用不同的配置文件，而属性则可以从配置文件、环境变量、命令行参数等来源获取。因此，当Environment准备好后，在整个应用的任何时候，都可以从Environment中获取资源。  
-  判断Environment是否存在，不存在就创建（如果是web项目就创建StandardServletEnvironment，否则创建StandardEnvironment）  
-  配置Environment：配置profile以及properties  
-  调用SpringApplicationRunListener的environmentPrepared()方法，通知事件监听者：应用的Environment已经准备好  
-3. 打印banner（可以自定义）  
-4. 根据是否是web项目，来创建不同的ApplicationContext容器  
-5. 创建一系列FailureAnalyzer，创建流程依然是通过SpringFactoriesLoader获取到所有实现FailureAnalyzer接口的class，然后在创建对应的实例。FailureAnalyzer用于分析故障并提供相关诊断信息。
-6. 初始化ApplicationContext  
-	将准备好的Environment设置给ApplicationContext
-	遍历调用所有的ApplicationContextInitializer的initialize()方法来对已经创建好的ApplicationContext进行进一步的处理
-	调用SpringApplicationRunListener的contextPrepared()方法，通知所有的监听者：ApplicationContext已经准备完毕
-	将所有的bean加载到容器中
-	调用SpringApplicationRunListener的contextLoaded()方法，通知所有的监听者：ApplicationContext已经装载完毕
-7. 调用ApplicationContext的refresh()方法,刷新容器  
-  这里的刷新和spring中刷新原理类似，这里重点关注invokeBeanFactoryPostProcessors(beanFactory);方法，主要完成获取到所有的BeanFactoryPostProcessor来对容器做一些额外的操作，通过源可以进入到PostProcessorRegistrationDelegate类的invokeBeanFactoryPostProcessors()方法，会获取类型为BeanDefinitionRegistryPostProcessor的beanorg.springframework.context.annotation.internalConfigurationAnnotationProcessor，对应的Class为ConfigurationClassPostProcessor。ConfigurationClassPostProcessor用于解析处理各种注解，包括：@Configuration、@ComponentScan、@Import、@PropertySource、@ImportResource、@Bean。当处理@import注解的时候，就会调用EnableAutoConfigurationImportSelector.selectImports()来完成自动配置功能  
-	
-  tomcat的启动的地方也是在refresh方法中，具体就是onRefresh();方法  
-	
-8.查找当前context中是否注册有CommandLineRunner和ApplicationRunner，如果有则遍历执行它们。
 
 - createApplicationContext
 ```java 
